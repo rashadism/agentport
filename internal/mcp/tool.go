@@ -1,0 +1,115 @@
+package mcp
+
+import (
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"sync"
+
+	"charm.land/fantasy"
+	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
+)
+
+// headerRoundTripper adds custom headers to HTTP requests
+type headerRoundTripper struct {
+	headers       map[string]string
+	tlsSkipVerify bool
+	once          sync.Once
+	transport     http.RoundTripper
+}
+
+func (rt *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	for k, v := range rt.headers {
+		req.Header.Set(k, v)
+	}
+
+	rt.once.Do(func() {
+		if rt.tlsSkipVerify {
+			rt.transport = &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			}
+		} else {
+			rt.transport = http.DefaultTransport
+		}
+	})
+
+	return rt.transport.RoundTrip(req)
+}
+
+// Tool wraps an MCP tool as a Fantasy AgentTool
+type Tool struct {
+	manager    *Manager
+	serverName string
+	tool       *gomcp.Tool
+}
+
+func (t *Tool) Info() fantasy.ToolInfo {
+	parameters := make(map[string]any)
+	required := make([]string, 0)
+
+	if input, ok := t.tool.InputSchema.(map[string]any); ok {
+		if props, ok := input["properties"].(map[string]any); ok {
+			parameters = props
+		}
+		if req, ok := input["required"].([]any); ok {
+			for _, v := range req {
+				if s, ok := v.(string); ok {
+					required = append(required, s)
+				}
+			}
+		}
+	}
+
+	return fantasy.ToolInfo{
+		Name:        fmt.Sprintf("mcp_%s_%s", t.serverName, t.tool.Name),
+		Description: t.tool.Description,
+		Parameters:  parameters,
+		Required:    required,
+	}
+}
+
+func (t *Tool) Run(ctx context.Context, params fantasy.ToolCall) (fantasy.ToolResponse, error) {
+	// Get session with auto-reconnect
+	session, err := t.manager.GetSession(ctx, t.serverName)
+	if err != nil {
+		return fantasy.NewTextErrorResponse(err.Error()), nil
+	}
+
+	var args map[string]any
+	if err := json.Unmarshal([]byte(params.Input), &args); err != nil {
+		return fantasy.NewTextErrorResponse(fmt.Sprintf("error parsing parameters: %v", err)), nil
+	}
+
+	result, err := session.CallTool(ctx, &gomcp.CallToolParams{
+		Name:      t.tool.Name,
+		Arguments: args,
+	})
+	if err != nil {
+		return fantasy.NewTextErrorResponse(err.Error()), nil
+	}
+
+	if len(result.Content) == 0 {
+		return fantasy.NewTextResponse(""), nil
+	}
+
+	var textParts []string
+	for _, v := range result.Content {
+		switch content := v.(type) {
+		case *gomcp.TextContent:
+			textParts = append(textParts, content.Text)
+		default:
+			textParts = append(textParts, fmt.Sprintf("%v", v))
+		}
+	}
+
+	return fantasy.NewTextResponse(strings.Join(textParts, "\n")), nil
+}
+
+func (t *Tool) ProviderOptions() fantasy.ProviderOptions {
+	return nil
+}
+
+func (t *Tool) SetProviderOptions(_ fantasy.ProviderOptions) {}
