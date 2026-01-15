@@ -150,7 +150,7 @@ func (m *Manager) GetAllTools(ctx context.Context) []fantasy.AgentTool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var allTools []fantasy.AgentTool
+	var allTools []*Tool
 
 	for name, session := range m.sessions {
 		tools, err := session.ListTools(ctx, &gomcp.ListToolsParams{})
@@ -168,7 +168,14 @@ func (m *Manager) GetAllTools(ctx context.Context) []fantasy.AgentTool {
 		}
 	}
 
-	return allTools
+	filtered := FilterTools(allTools)
+	slog.Info("MCP tools filtered", "total", len(allTools), "allowed", len(filtered))
+
+	result := make([]fantasy.AgentTool, len(filtered))
+	for i, t := range filtered {
+		result[i] = t
+	}
+	return result
 }
 
 // Close closes all MCP client sessions
