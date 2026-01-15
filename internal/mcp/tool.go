@@ -2,42 +2,13 @@ package mcp
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"strings"
-	"sync"
 
 	"charm.land/fantasy"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
-
-// headerRoundTripper adds custom headers to HTTP requests
-type headerRoundTripper struct {
-	headers       map[string]string
-	tlsSkipVerify bool
-	once          sync.Once
-	transport     http.RoundTripper
-}
-
-func (rt *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	for k, v := range rt.headers {
-		req.Header.Set(k, v)
-	}
-
-	rt.once.Do(func() {
-		if rt.tlsSkipVerify {
-			rt.transport = &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-			}
-		} else {
-			rt.transport = http.DefaultTransport
-		}
-	})
-
-	return rt.transport.RoundTrip(req)
-}
 
 // Tool wraps an MCP tool as a Fantasy AgentTool
 type Tool struct {

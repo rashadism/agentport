@@ -12,6 +12,8 @@ import (
 
 	"charm.land/fantasy"
 	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"rca.agent/test/internal/httputil"
 )
 
 const defaultTimeout = 30 * time.Second
@@ -83,9 +85,9 @@ func (m *Manager) connect(ctx context.Context, cfg Config) {
 
 func (m *Manager) createSession(ctx context.Context, cfg Config) (*gomcp.ClientSession, error) {
 	httpClient := &http.Client{
-		Transport: &headerRoundTripper{
-			headers:       cfg.Headers,
-			tlsSkipVerify: cfg.TLSSkipVerify,
+		Transport: &httputil.HeaderRoundTripper{
+			Headers:   cfg.Headers,
+			Transport: httputil.NewTransport(cfg.TLSSkipVerify),
 		},
 	}
 

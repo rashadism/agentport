@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,7 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rashad/fantasydemo/internal/config"
+	"rca.agent/test/internal/config"
+	"rca.agent/test/internal/httputil"
 )
 
 // OAuthTokenResponse represents the OAuth2 token response
@@ -34,17 +34,9 @@ type OAuthTokenManager struct {
 
 // NewOAuthTokenManager creates a new token manager
 func NewOAuthTokenManager(cfg *config.Config) *OAuthTokenManager {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if cfg.TLSInsecureSkipVerify {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	}
-
 	return &OAuthTokenManager{
-		cfg: cfg,
-		httpClient: &http.Client{
-			Timeout:   30 * time.Second,
-			Transport: transport,
-		},
+		cfg:        cfg,
+		httpClient: httputil.NewHTTPClient(30*time.Second, cfg.TLSInsecureSkipVerify),
 	}
 }
 

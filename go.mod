@@ -1,4 +1,4 @@
-module github.com/rashad/fantasydemo
+module rca.agent/test
 
 go 1.25.3
 

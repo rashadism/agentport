@@ -10,7 +10,7 @@ import (
 	"charm.land/fantasy/providers/google"
 	"charm.land/fantasy/providers/openai"
 
-	"github.com/rashad/fantasydemo/internal/config"
+	"rca.agent/test/internal/config"
 )
 
 // Type represents a supported LLM provider

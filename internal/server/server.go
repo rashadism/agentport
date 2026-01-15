@@ -10,91 +10,47 @@ import (
 
 	"charm.land/fantasy"
 
-	"github.com/rashad/fantasydemo/internal/auth"
-	"github.com/rashad/fantasydemo/internal/config"
-	"github.com/rashad/fantasydemo/internal/handler"
-	"github.com/rashad/fantasydemo/internal/mcp"
-	"github.com/rashad/fantasydemo/internal/provider"
+	"rca.agent/test/internal/agent"
+	"rca.agent/test/internal/config"
 )
+
+// AnalyzeRequest represents the request body for /analyze
+type AnalyzeRequest struct {
+	Prompt string `json:"prompt"`
+}
+
+// AnalyzeResponse represents the response body for /analyze
+type AnalyzeResponse struct {
+	Response   string    `json:"response"`
+	TotalSteps int       `json:"total_steps"`
+	Usage      UsageInfo `json:"usage"`
+	Error      string    `json:"error,omitempty"`
+}
+
+// UsageInfo represents token usage information
+type UsageInfo struct {
+	InputTokens  int64 `json:"input_tokens"`
+	OutputTokens int64 `json:"output_tokens"`
+	TotalTokens  int64 `json:"total_tokens"`
+}
 
 // Server represents the HTTP server
 type Server struct {
 	cfg        *config.Config
-	mcpManager *mcp.Manager
-	agent      fantasy.Agent
+	agent      *agent.Agent
 	httpServer *http.Server
 }
 
 // New creates a new server instance
 func New(cfg *config.Config, systemPrompt string) (*Server, error) {
-	ctx := context.Background()
-
-	// Get model name with default
-	modelName := cfg.RCAModelName
-	if modelName == "" {
-		modelName = "gpt-4o" // Default model
-	}
-
-	// Initialize language model using provider inference
-	model, err := provider.InitLanguageModel(ctx, modelName, cfg)
+	a, err := agent.New(context.Background(), cfg, systemPrompt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize language model: %w", err)
+		return nil, fmt.Errorf("failed to create agent: %w", err)
 	}
-
-	slog.Info("Initialized model", "model", modelName)
-
-	// Initialize MCP manager
-	mcpManager := mcp.NewManager()
-
-	// Get MCP server configs
-	mcpServerConfigs := cfg.GetMCPServers()
-
-	// Convert to mcp.Config slice
-	var mcpConfigs []mcp.Config
-	for _, s := range mcpServerConfigs {
-		slog.Debug("MCP server configured", "name", s.Name, "url", s.URL)
-		mcpConfigs = append(mcpConfigs, mcp.Config{
-			Name:          s.Name,
-			URL:           s.URL,
-			Headers:       s.Headers,
-			TLSSkipVerify: cfg.TLSInsecureSkipVerify,
-		})
-	}
-
-	// Add OAuth headers if configured
-	if cfg.IsOAuthConfigured() {
-		token, err := auth.FetchOAuthToken(ctx, cfg)
-		if err != nil {
-			slog.Warn("Failed to fetch OAuth token", "error", err)
-		} else {
-			for i := range mcpConfigs {
-				if mcpConfigs[i].Headers == nil {
-					mcpConfigs[i].Headers = make(map[string]string)
-				}
-				mcpConfigs[i].Headers["Authorization"] = "Bearer " + token
-			}
-			slog.Debug("OAuth token acquired")
-		}
-	}
-
-	// Initialize MCP connections
-	mcpManager.Initialize(ctx, mcpConfigs)
-
-	// Get all tools from MCP servers
-	allTools := mcpManager.GetAllTools(ctx)
-	slog.Info("MCP tools collected", "count", len(allTools))
-
-	// Create agent
-	agent := fantasy.NewAgent(
-		model,
-		fantasy.WithSystemPrompt(systemPrompt),
-		fantasy.WithTools(allTools...),
-	)
 
 	return &Server{
-		cfg:        cfg,
-		mcpManager: mcpManager,
-		agent:      agent,
+		cfg:   cfg,
+		agent: a,
 	}, nil
 }
 
@@ -121,12 +77,10 @@ func (s *Server) Start() error {
 func (s *Server) Shutdown(ctx context.Context) error {
 	slog.Info("Server shutting down")
 
-	// Close MCP connections
-	if err := s.mcpManager.Close(); err != nil {
-		slog.Error("MCP close error", "error", err)
+	if err := s.agent.Close(); err != nil {
+		slog.Error("Agent close error", "error", err)
 	}
 
-	// Shutdown HTTP server
 	return s.httpServer.Shutdown(ctx)
 }
 
@@ -136,7 +90,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
-	var req handler.AnalyzeRequest
+	var req AnalyzeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		s.writeError(w, http.StatusBadRequest, "invalid request body")
 		return
@@ -183,10 +137,10 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 	duration := time.Since(startTime)
 	slog.Info("Analysis completed", "duration", duration)
 
-	resp := handler.AnalyzeResponse{
+	resp := AnalyzeResponse{
 		Response:   result.Response.Content.Text(),
 		TotalSteps: len(result.Steps),
-		Usage: handler.UsageInfo{
+		Usage: UsageInfo{
 			InputTokens:  result.TotalUsage.InputTokens,
 			OutputTokens: result.TotalUsage.OutputTokens,
 			TotalTokens:  result.TotalUsage.TotalTokens,
@@ -200,7 +154,7 @@ func (s *Server) handleAnalyze(w http.ResponseWriter, r *http.Request) {
 func (s *Server) writeError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(handler.AnalyzeResponse{Error: message})
+	json.NewEncoder(w).Encode(AnalyzeResponse{Error: message})
 }
 
 func truncate(s string, maxLen int) string {
