@@ -76,7 +76,19 @@ func (t *Tool) Run(ctx context.Context, params fantasy.ToolCall) (fantasy.ToolRe
 		}
 	}
 
-	return fantasy.NewTextResponse(strings.Join(textParts, "\n")), nil
+	textContent := strings.Join(textParts, "\n")
+
+	// Apply response transformer if one exists for this tool
+	if transformer := GetTransformer(t.tool.Name); transformer != nil {
+		var content map[string]any
+		if err := json.Unmarshal([]byte(textContent), &content); err == nil {
+			if transformed, err := transformer.Transform(content); err == nil && transformed != "" {
+				textContent = transformed
+			}
+		}
+	}
+
+	return fantasy.NewTextResponse(textContent), nil
 }
 
 func (t *Tool) ProviderOptions() fantasy.ProviderOptions {

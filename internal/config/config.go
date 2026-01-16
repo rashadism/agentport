@@ -13,8 +13,8 @@ import (
 // Config holds all configuration for the RCA agent
 type Config struct {
 	// LLM settings
-	RCAModelName  string `koanf:"rca_model_name"`
-	RCALLMAPIKey  string `koanf:"rca_llm_api_key"`
+	RCAModelName string `koanf:"rca_model_name"`
+	RCALLMAPIKey string `koanf:"rca_llm_api_key"`
 
 	// MCP server URLs
 	ObserverMCPURL   string `koanf:"observer_mcp_url"`
@@ -29,8 +29,8 @@ type Config struct {
 	OpenSearchPassword string `koanf:"opensearch_password"`
 
 	// OAuth2 Client Credentials
-	OAuthTokenURL    string `koanf:"oauth_token_url"`
-	OAuthClientID    string `koanf:"oauth_client_id"`
+	OAuthTokenURL     string `koanf:"oauth_token_url"`
+	OAuthClientID     string `koanf:"oauth_client_id"`
 	OAuthClientSecret string `koanf:"oauth_client_secret"`
 
 	// Analysis concurrency and timeout settings
@@ -60,8 +60,8 @@ func Load() (*Config, error) {
 	// Environment variable mappings (case-insensitive in env, but we check uppercase)
 	envMappings := map[string]string{
 		// LLM
-		"RCA_MODEL_NAME":   "rca_model_name",
-		"RCA_LLM_API_KEY":  "rca_llm_api_key",
+		"RCA_MODEL_NAME":  "rca_model_name",
+		"RCA_LLM_API_KEY": "rca_llm_api_key",
 
 		// MCP URLs
 		"OBSERVER_MCP_URL":   "observer_mcp_url",
@@ -81,8 +81,8 @@ func Load() (*Config, error) {
 		"OAUTH_CLIENT_SECRET": "oauth_client_secret",
 
 		// Analysis settings
-		"MAX_CONCURRENT_ANALYSES":   "max_concurrent_analyses",
-		"ANALYSIS_TIMEOUT_SECONDS":  "analysis_timeout_seconds",
+		"MAX_CONCURRENT_ANALYSES":  "max_concurrent_analyses",
+		"ANALYSIS_TIMEOUT_SECONDS": "analysis_timeout_seconds",
 
 		// TLS
 		"TLS_INSECURE_SKIP_VERIFY": "tls_insecure_skip_verify",
@@ -158,7 +158,7 @@ func getDefaults() map[string]any {
 		// Server
 		"server_port":      8080,
 		"read_timeout":     "30s",
-		"write_timeout":    "30s",
+		"write_timeout":    "1200s",
 		"shutdown_timeout": "10s",
 	}
 }
