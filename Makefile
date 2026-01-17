@@ -10,7 +10,7 @@ run: build
 
 # Run locally with .env file
 run-local:
-	@export $$(cat .env | xargs) && go run ./cmd/fantasydemo
+	@export $$(cat .env | xargs) && go run ./cmd
 
 # Run tests
 test:

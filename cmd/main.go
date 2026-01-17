@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -9,58 +10,63 @@ import (
 	"syscall"
 
 	"rca.agent/test/internal/config"
-	"rca.agent/test/internal/server"
+	"rca.agent/test/internal/handler"
+	"rca.agent/test/internal/service"
 )
 
-const systemPrompt = `
-You are very helpful assistant and you have tools available to help with user queries. Use whenever needed
-`
-
 func main() {
-	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("Failed to load config", "error", err)
 		os.Exit(1)
 	}
 
-	// Set up structured logging
 	setupLogging(cfg.LogLevel)
 
-	// Create server
-	srv, err := server.New(cfg, systemPrompt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Create service
+	svc, err := service.NewAnalysisService(ctx, cfg)
 	if err != nil {
-		slog.Error("Failed to create server", "error", err)
+		slog.Error("Failed to create service", "error", err)
 		os.Exit(1)
 	}
 
-	// Handle graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Create handler and routes
+	h := handler.New(svc, cfg.AnalysisTimeout)
+	mux := http.NewServeMux()
+	h.RegisterRoutes(mux)
 
+	// Create server
+	srv := &http.Server{
+		Addr:         fmt.Sprintf(":%d", cfg.ServerPort),
+		Handler:      mux,
+		ReadTimeout:  cfg.ReadTimeout, // TODO: update these
+		WriteTimeout: cfg.WriteTimeout,
+	}
+
+	// Start server
 	go func() {
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		<-sigCh
-		slog.Info("Received shutdown signal")
-		cancel()
-
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-		defer shutdownCancel()
-
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			slog.Error("Shutdown error", "error", err)
+		slog.Info("Server starting", "port", cfg.ServerPort)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("Server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
-	// Start server
-	if err := srv.Start(); err != nil && err != http.ErrServerClosed {
-		slog.Error("Server error", "error", err)
-		os.Exit(1)
-	}
-
+	// Wait for interrupt
 	<-ctx.Done()
-	slog.Info("Server stopped")
+
+	// Graceful shutdown
+	slog.Info("Shutting down")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+	defer cancel()
+
+	svc.Close()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("Shutdown error", "error", err)
+	}
 }
 
 func setupLogging(level string) {
@@ -78,9 +84,7 @@ func setupLogging(level string) {
 		logLevel = slog.LevelInfo
 	}
 
-	handler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: logLevel,
-	})
-	slog.SetDefault(slog.New(handler))
+	h := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})
+	slog.SetDefault(slog.New(h))
 	slog.Debug("Logging initialized", "level", level)
 }

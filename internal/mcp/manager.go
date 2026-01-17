@@ -10,8 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"charm.land/fantasy"
-	gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
+gomcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"rca.agent/test/internal/httputil"
 )
@@ -126,9 +125,14 @@ func (m *Manager) GetSession(ctx context.Context, name string) (*gomcp.ClientSes
 		if err := session.Ping(pingCtx, nil); err == nil {
 			return session, nil
 		}
+		// Ping failed - close and remove stale session before reconnecting
+		session.Close()
+		m.mu.Lock()
+		delete(m.sessions, name)
+		m.mu.Unlock()
 	}
 
-	// Reconnect
+	// Reconnect with fresh session
 	slog.Debug("MCP reconnecting", "server", name)
 
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
@@ -147,22 +151,22 @@ func (m *Manager) GetSession(ctx context.Context, name string) (*gomcp.ClientSes
 	return newSession, nil
 }
 
-// GetAllTools returns Fantasy AgentTools for all connected MCP servers
-func (m *Manager) GetAllTools(ctx context.Context) []fantasy.AgentTool {
+// GetAllTools returns all tools from connected MCP servers
+func (m *Manager) GetAllTools(ctx context.Context) []*Tool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var allTools []*Tool
+	var tools []*Tool
 
 	for name, session := range m.sessions {
-		tools, err := session.ListTools(ctx, &gomcp.ListToolsParams{})
+		listed, err := session.ListTools(ctx, &gomcp.ListToolsParams{})
 		if err != nil {
 			slog.Warn("MCP failed to list tools", "server", name, "error", err)
 			continue
 		}
 
-		for _, tool := range tools.Tools {
-			allTools = append(allTools, &Tool{
+		for _, tool := range listed.Tools {
+			tools = append(tools, &Tool{
 				manager:    m,
 				serverName: name,
 				tool:       tool,
@@ -170,14 +174,7 @@ func (m *Manager) GetAllTools(ctx context.Context) []fantasy.AgentTool {
 		}
 	}
 
-	filtered := FilterTools(allTools)
-	slog.Info("MCP tools filtered", "total", len(allTools), "allowed", len(filtered))
-
-	result := make([]fantasy.AgentTool, len(filtered))
-	for i, t := range filtered {
-		result[i] = t
-	}
-	return result
+	return tools
 }
 
 // Close closes all MCP client sessions

@@ -17,6 +17,11 @@ type Tool struct {
 	tool       *gomcp.Tool
 }
 
+// Name returns the original MCP tool name.
+func (t *Tool) Name() string {
+	return t.tool.Name
+}
+
 func (t *Tool) Info() fantasy.ToolInfo {
 	parameters := make(map[string]any)
 	required := make([]string, 0)
